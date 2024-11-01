@@ -1,0 +1,265 @@
+﻿@inject IWebAudioService AudioService
+@implements IAsyncDisposable
+
+<div class="audio-player">
+    @if (CurrentSong is not null)
+    {
+        <div class="song-info">
+            <h2>@CurrentSong.Title</h2>
+            <h3>@CurrentSong.Artist</h3>
+            <p>Estado: @loadingStatus</p>
+        </div>
+
+        <div class="track-controls">
+            @foreach (var track in CurrentSong.AudioTracks)
+            {
+                <div class="track-control">
+                    <div class="track-header">
+                        <span class="track-name">@track.Name</span>
+                        <button class="btn btn-small" @onclick="() => ToggleTrackMute(track.Id)">
+                            <span class="icon">@(IsTrackMuted(track.Id) ? "🔇" : "🔊")</span>
+                        </button>
+                    </div>
+                    <input type="range"
+                           min="0"
+                           max="100"
+                           value="@(GetTrackVolume(track.Id) * 100)"
+                           @onchange="@(e => UpdateTrackVolume(track.Id, float.Parse(e.Value.ToString()) / 100))" />
+                </div>
+            }
+        </div>
+
+        <div class="chord-display @(IsPlaying ? "active" : "")">
+            <h1>@CurrentChord</h1>
+        </div>
+
+        <div class="lyrics-display">
+            <p>@CurrentLyric</p>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-large" @onclick="OnPreviousClick" disabled="@(!isLoaded || CurrentSong is null)">
+                <span class="icon">⏮</span>
+            </button>
+
+            <button class="btn btn-large primary" @onclick="TogglePlayback" disabled="@(!isLoaded || CurrentSong is null)">
+                <span class="icon">@(IsPlaying ? "⏸" : "▶")</span>
+            </button>
+
+            <button class="btn btn-large" @onclick="OnNextClick" disabled="@(!isLoaded || CurrentSong is null)">
+                <span class="icon">⏭</span>
+            </button>
+        </div>
+
+        <div class="progress-bar">
+            <div class="progress" style="width: @(ProgressPercentage)%"></div>
+        </div>
+    }
+    else
+    {
+        <div class="no-song-message">
+            <p>No hay canción seleccionada</p>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public Song? CurrentSong { get; set; }
+
+    [Parameter]
+    public EventCallback<Song> OnSongChange { get; set; }
+
+    private bool IsPlaying { get; set; }
+    private bool isLoaded = false;
+    private string loadingStatus = "Inicializando...";
+    private string CurrentChord { get; set; } = string.Empty;
+    private string CurrentLyric { get; set; } = string.Empty;
+    private double CurrentTime { get; set; }
+    private int Volume { get; set; } = 100;
+    private Dictionary<string, float> trackVolumes = new();
+    private HashSet<string> mutedTracks = new();
+
+    private double ProgressPercentage =>
+        CurrentSong?.Sections.LastOrDefault()?.EndTime > 0
+            ? (CurrentTime / CurrentSong.Sections.LastOrDefault()!.EndTime) * 100
+            : 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            loadingStatus = "Inicializando servicio de audio...";
+            await AudioService.InitializeAsync();
+            AudioService.OnPlaybackStateChanged += HandlePlaybackStateChanged;
+            AudioService.OnTimeUpdate += HandleTimeUpdate;
+        }
+        catch (Exception ex)
+        {
+            loadingStatus = $"Error inicializando audio: {ex.Message}";
+            Console.Error.WriteLine($"Error en OnInitializedAsync: {ex}");
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (CurrentSong is not null)
+        {
+            // Inicializar volúmenes
+            foreach (var track in CurrentSong.AudioTracks)
+            {
+                if (!trackVolumes.ContainsKey(track.Id))
+                {
+                    trackVolumes[track.Id] = track.Volume;
+                }
+            }
+            await LoadAudioTracks();
+        }
+    }
+
+    private async Task LoadAudioTracks()
+    {
+        try
+        {
+            isLoaded = false;
+            loadingStatus = "Cargando pistas de audio...";
+            IsPlaying = false;
+            CurrentTime = 0;
+            CurrentChord = string.Empty;
+            CurrentLyric = string.Empty;
+
+            await AudioService.StopAsync();
+
+            foreach (var track in CurrentSong!.AudioTracks)
+            {
+                loadingStatus = $"Cargando pista: {track.Name}...";
+                await AudioService.LoadTrackAsync(track.Id, track.Url);
+                Console.WriteLine($"Pista cargada: {track.Id} - {track.Url}");
+            }
+
+            isLoaded = true;
+            loadingStatus = "Listo para reproducir";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            loadingStatus = $"Error cargando audio: {ex.Message}";
+            Console.Error.WriteLine($"Error cargando pistas: {ex}");
+            isLoaded = false;
+        }
+    }
+
+    private async Task ToggleTrackMute(string trackId)
+    {
+        if (mutedTracks.Contains(trackId))
+        {
+            mutedTracks.Remove(trackId);
+            await AudioService.SetVolumeAsync(trackId, GetTrackVolume(trackId));
+        }
+        else
+        {
+            mutedTracks.Add(trackId);
+            await AudioService.SetVolumeAsync(trackId, 0);
+        }
+        StateHasChanged();
+    }
+
+    private async Task UpdateTrackVolume(string trackId, float volume)
+    {
+        trackVolumes[trackId] = volume;
+        if (!IsTrackMuted(trackId))
+        {
+            await AudioService.SetVolumeAsync(trackId, volume);
+        }
+    }
+
+    private async Task TogglePlayback()
+    {
+        if (CurrentSong is null || !isLoaded) return;
+
+        try
+        {
+            if (IsPlaying)
+            {
+                await AudioService.PauseAsync();
+            }
+            else
+            {
+                // Reproducir todas las pistas no muteadas
+                foreach (var track in CurrentSong.AudioTracks)
+                {
+                    if (!IsTrackMuted(track.Id))
+                    {
+                        Console.WriteLine($"Reproduciendo pista: {track.Id}");
+                        await AudioService.PlayAsync(track.Id);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            loadingStatus = $"Error en reproducción: {ex.Message}";
+            Console.Error.WriteLine($"Error en TogglePlayback: {ex}");
+        }
+    }
+
+    private void HandlePlaybackStateChanged(PlaybackState state)
+    {
+        IsPlaying = state == PlaybackState.Playing;
+        StateHasChanged();
+    }
+
+    private void HandleTimeUpdate(double time)
+    {
+        CurrentTime = time;
+        UpdateCurrentLyricAndChord();
+        StateHasChanged();
+    }
+
+    private void UpdateCurrentLyricAndChord()
+    {
+        if (CurrentSong is null) return;
+
+        var currentSection = CurrentSong.Sections
+            .FirstOrDefault(s => s.StartTime <= CurrentTime && s.EndTime >= CurrentTime);
+
+        if (currentSection is null) return;
+
+        var currentLine = currentSection.Lines
+            .FirstOrDefault(l => l.Time <= CurrentTime && l.Time + l.Duration >= CurrentTime);
+
+        if (currentLine is not null)
+        {
+            CurrentLyric = currentLine.Text;
+            CurrentChord = currentLine.Chord;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (AudioService is not null)
+        {
+            AudioService.OnPlaybackStateChanged -= HandlePlaybackStateChanged;
+            AudioService.OnTimeUpdate -= HandleTimeUpdate;
+            await AudioService.StopAsync();
+        }
+    }
+
+    private async Task OnPreviousClick()
+    {
+        // Implementar lógica para la canción anterior
+        await OnSongChange.InvokeAsync(null); // Ajusta según tu lógica
+    }
+
+    private async Task OnNextClick()
+    {
+        // Implementar lógica para la siguiente canción
+        await OnSongChange.InvokeAsync(null); // Ajusta según tu lógica
+    }
+
+    private bool IsTrackMuted(string trackId) =>
+        mutedTracks.Contains(trackId);
+
+    private float GetTrackVolume(string trackId) =>
+        trackVolumes.GetValueOrDefault(trackId, 1.0f);
+}

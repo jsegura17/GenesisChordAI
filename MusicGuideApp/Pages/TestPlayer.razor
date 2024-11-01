@@ -1,0 +1,137 @@
+﻿// Pages/TestPlayer.razor
+@page "/test-player"
+
+<h2>Reproductor de Prueba</h2>
+
+<div class="song-selector">
+    <button class="btn btn-primary" @onclick="LoadTestSong">Cargar Canción de Prueba</button>
+</div>
+
+<div class="mt-4">
+     <AudioPlayerComponent CurrentSong="@currentSong" OnSongChange="@HandleSongChange" /> 
+</div>
+
+@code {
+    private Song? currentSong;
+
+    protected override void OnInitialized()
+    {
+        // Creamos una canción de prueba al iniciar
+        CreateTestSong();
+    }
+
+    private void CreateTestSong()
+    {
+        currentSong = new Song
+            {
+                Id = "test-song-1",
+                Title = "Canción de Prueba",
+                Artist = "Artista de Prueba",
+                Tempo = 120,
+                Key = "C",
+                AudioTracks = new List<AudioTrack>
+            {
+                new AudioTrack
+                {
+                    Id = "main-track-1",
+                    Name = "Pista Principal",
+                    // Por ahora usamos un archivo de audio de ejemplo
+                    Url = "sample-data/Hermoso y Profundo Amor.mp3",
+                    Type = TrackType.MainTrack,
+                    Volume = 1.0f
+                },
+                new AudioTrack
+                {
+                    Id = "chord-track-1",
+                    Name = "Guía de Acordes",
+                    Url = "sample-data/chord-guide.wav",
+                    Type = TrackType.ChordGuide,
+                    Volume = 0.8f
+                }
+            },
+                Sections = new List<Section>
+            {
+                new Section
+                {
+                    Id = "section-1",
+                    Type = SectionType.Verse,
+                    StartTime = 0,
+                    EndTime = 15,
+                    Lines = new List<LyricLine>
+                    {
+                        new LyricLine
+                        {
+                            Id = "line-1",
+                            Time = 0,
+                            Text = "Esta es la primera línea de la canción",
+                            Chord = "C",
+                            Duration = 4
+                        },
+                        new LyricLine
+                        {
+                            Id = "line-2",
+                            Time = 4,
+                            Text = "Esta es la segunda línea para cantar",
+                            Chord = "Am",
+                            Duration = 4
+                        },
+                        new LyricLine
+                        {
+                            Id = "line-3",
+                            Time = 8,
+                            Text = "Tercera línea con nuevo acorde",
+                            Chord = "F",
+                            Duration = 4
+                        },
+                        new LyricLine
+                        {
+                            Id = "line-4",
+                            Time = 12,
+                            Text = "Última línea de esta sección",
+                            Chord = "G",
+                            Duration = 3
+                        }
+                    }
+                },
+                new Section
+                {
+                    Id = "section-2",
+                    Type = SectionType.Chorus,
+                    StartTime = 15,
+                    EndTime = 30,
+                    Lines = new List<LyricLine>
+                    {
+                        new LyricLine
+                        {
+                            Id = "line-5",
+                            Time = 15,
+                            Text = "Este es el coro de la canción",
+                            Chord = "F",
+                            Duration = 4
+                        },
+                        new LyricLine
+                        {
+                            Id = "line-6",
+                            Time = 19,
+                            Text = "Con más acordes para practicar",
+                            Chord = "G",
+                            Duration = 4
+                        }
+                    }
+                }
+            }
+            };
+    }
+
+    private async Task LoadTestSong()
+    {
+        CreateTestSong();
+        StateHasChanged();
+    }
+
+    private async Task HandleSongChange(Song? song)
+    {
+        currentSong = song;
+        StateHasChanged();
+    }
+}

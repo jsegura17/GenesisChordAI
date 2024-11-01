@@ -1,0 +1,4 @@
+namespace MusicGuideApp.Shared.DTOs
+{
+
+}
